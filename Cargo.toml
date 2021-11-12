@@ -1,0 +1,28 @@
+[package]
+name = "twtar"
+description = "Utility for accessing TWRP backup files"
+version = "0.1.0"
+authors = ["moschroe"]
+edition = "2018"
+license = "BSD-3-Clause"
+keywords = ["backup", "TWRP", "android"]
+categories = ["command-line-utilities"]
+repository = "https://github.com/moschroe/twtar"
+include = [
+    "src/**/*.rs",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE"
+]
+
+[dependencies]
+tar = { version = "0.4.37" }
+roaes = "0.1.1"
+snafu = { version = "0.6.10", features = ["backtraces"] }
+egzreader = "2.0.2"
+[target.'cfg(windows)'.dependencies]
+os_str_bytes = "5.0.0"
+
+# The release profile, used for `cargo build --release`.
+[profile.release]
+lto = true
