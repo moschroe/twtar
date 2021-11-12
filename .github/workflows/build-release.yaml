@@ -1,0 +1,206 @@
+---
+# pilfered from ripgrep and adapted
+name: build-release
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+
+jobs:
+  create-release:
+    name: create_release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create artifacts directory
+        run: mkdir artifacts
+
+      - name: Get the release version from the tag
+        if: env.HM_VERSION == ''
+        run: |
+          # Apparently, this is the right way to get a tag name. Really?
+          #
+          # See: https://github.community/t5/GitHub-Actions/How-to-get-just-the-tag-name/m-p/32167/highlight/true#M1027
+          echo "HM_VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          echo "version is: ${{ env.HM_VERSION }}"
+          if [ -z "${GITHUB_REF#refs/tags/}" ]; then
+            echo "EMPTY VERSION!"
+            exit 7
+          fi
+      - name: Create GitHub release
+        id: release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.HM_VERSION }}
+          release_name: ${{ env.HM_VERSION }}
+          draft: false
+
+      - name: Save release upload URL to artifact
+        run: echo "${{ steps.release.outputs.upload_url }}" > artifacts/release-upload-url
+
+      - name: Save version number to artifact
+        run: echo "${{ env.HM_VERSION }}" > artifacts/release-version
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: artifacts
+          path: artifacts
+
+  build-release:
+    name: build-release
+    needs: ['create-release']
+    runs-on: ${{ matrix.os }}
+    env:
+      # For some builds, we use cross to test on 32-bit and big-endian
+      # systems.
+      CARGO: cargo
+      # When CARGO is set to CROSS, this is set to `--target matrix.target`.
+      TARGET_FLAGS:
+      # When CARGO is set to CROSS, TARGET_DIR includes matrix.target.
+      TARGET_DIR: ./target
+      # Emit backtraces on panics.
+      RUST_BACKTRACE: 1
+      # Build static releases with PCRE2.
+      PCRE2_SYS_STATIC: 1
+    strategy:
+      matrix:
+#        build: [linux, macos]
+        build: [linux, linux-musl, windings, macos, macos-m1]
+        include:
+          - build: linux
+            os: ubuntu-20.04
+            rust: stable
+            target: x86_64-unknown-linux-gnu
+            skip_tests: false
+          - build: linux-musl
+            os: ubuntu-20.04
+            rust: stable
+            target: x86_64-unknown-linux-musl
+            skip_tests: false
+          - build: macos
+            os: macos-latest
+            rust: stable
+            target: x86_64-apple-darwin
+            skip_tests: false
+          - build: macos-m1
+            os: macos-11
+            rust: stable
+            target: aarch64-apple-darwin
+            skip_tests: true
+          - build: windings
+            os: windows-latest
+            rust: stable
+            target: x86_64-pc-windows-gnu
+            skip_tests: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          profile: minimal
+          target: ${{ matrix.target }}
+          default: true
+
+      - name: Show command used for Cargo
+        shell: bash
+        run: |
+          echo "cargo command is: ${{ env.CARGO }}"
+          echo "target flag is: ${{ env.TARGET_FLAGS }}"
+          echo "target dir is: ${{ env.TARGET_DIR }}"
+      - name: Get release download URL
+        uses: actions/download-artifact@v1
+        with:
+          name: artifacts
+          path: artifacts
+
+      - name: Set release upload URL and release version
+        shell: bash
+        run: |
+          echo "0007"
+          set -x
+          echo "$GITHUB_ENV"
+          find artifacts -type f -exec echo echo \"'>>>' {}\"\; head \"{}\" \; | sh
+
+          export release_upload_url="$(cat artifacts/release-upload-url)"
+          echo "RELEASE_UPLOAD_URL=\"$(cat artifacts/release-upload-url)\"" >> $GITHUB_ENV
+          # echo "release upload url (cat      ): [$(cat artifacts/release-upload-url)]"
+          # echo "release upload url (lowercase): [$release_upload_url]"
+          # echo "release upload url (uppercase): [$RELEASE_UPLOAD_URL]"
+          export release_version="$(cat artifacts/release-version)"
+          echo "RELEASE_VERSION=$release_version" >> $GITHUB_ENV
+          echo "release version: [$RELEASE_VERSION]"
+          echo "release version: [$release_version]"
+          if [ -z "$release_upload_url" ] || [ -z "$release_version" ]; then
+            echo "EMPTY VERSION/URL!"
+            exit 7
+          fi
+      - name: Run tests
+        shell: bash
+        run: ${{ matrix.skip_tests }} || ${{ env.CARGO }} test --verbose --target ${{ matrix.target }} --all ${{ env.TARGET_FLAGS }}
+      - name: Build release binary
+        shell: bash
+        run: |
+          set -x
+          if [ -z "$RELEASE_UPLOAD_URL" ] || [ -z "$RELEASE_VERSION" ]; then
+            echo "EMPTY VERSION/URL 222!"
+            exit 7
+          fi
+          ${{ env.CARGO }} build --verbose --target ${{ matrix.target }} --release ${{ env.TARGET_FLAGS }}
+
+      - name: Build archive
+        shell: bash
+        run: |
+          set -x
+          set -e
+          outdir="dist"
+          mkdir "${outdir}"
+          NAME_PACKAGE="${GITHUB_REPOSITORY##${GITHUB_REPOSITORY_OWNER}/}"
+          staging="${NAME_PACKAGE}-${{ env.RELEASE_VERSION }}-${{ matrix.target }}"
+          mkdir -p "$staging"
+          cp {README.md,LICENSE} "$staging/"
+          # cp complete/_rg "$staging/complete/"
+          cp "target/${{ matrix.target }}/release/${NAME_PACKAGE}" "$staging/"
+          tar -cf "$staging.tar" "$staging"
+          tar -tvf "$staging.tar"
+          gzip -9 "$staging.tar"
+          echo "ASSET=$staging.tar.gz" >> $GITHUB_ENV
+
+#      - name: DEBUG
+#        shell: bash
+#        run: |
+#          set -x
+#          set -e
+#          echo "${{ env.ASSET }}"
+#          stat "${{ env.ASSET }}"
+#          echo "${RELEASE_UPLOAD_URL}"
+
+      - name: Upload release archive
+        shell: bash
+        run: |
+          set -x
+          set -e
+
+          URL_UPLOAD="${RELEASE_UPLOAD_URL:1}"
+          URL_UPLOAD="${URL_UPLOAD:0:-1}"
+
+          cmd=(
+            curl
+            -X POST
+            -H "Accept: application/vnd.github.v3+json"
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}"
+            -H "Content-Type: application/octet-stream"
+            --data-binary "@${{ env.ASSET }}"
+            #  "${URL_UPLOAD}"
+            "${URL_UPLOAD%%\{*}?name=${{ env.ASSET }}&label=${{ env.ASSET }}"
+          )
+          echo "${cmd[@]@Q}"
+          "${cmd[@]}"

@@ -1,0 +1,103 @@
+---
+name: ci
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+jobs:
+  test:
+    name: test
+    env:
+      # For some builds, we use cross to test on 32-bit and big-endian
+      # systems.
+      CARGO: cargo
+      # When CARGO is set to CROSS, this is set to `--target matrix.target`.
+      TARGET_FLAGS:
+      # When CARGO is set to CROSS, TARGET_DIR includes matrix.target.
+      TARGET_DIR: ./target
+      # Emit backtraces on panics.
+      RUST_BACKTRACE: 1
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [linux, linux-musl, macos, macos-m1, windings]
+        include:
+          - build: linux
+            os: ubuntu-20.04
+            rust: stable
+            target: x86_64-unknown-linux-gnu
+            skip_tests: false
+          - build: linux-musl
+            os: ubuntu-20.04
+            rust: stable
+            target: x86_64-unknown-linux-musl
+            skip_tests: false
+          - build: macos
+            os: macos-latest
+            rust: stable
+            target: x86_64-apple-darwin
+            skip_tests: false
+          - build: macos-m1
+            os: macos-11
+            rust: stable
+            target: aarch64-apple-darwin
+            skip_tests: true
+          - build: windings
+            os: windows-latest
+            rust: stable
+            target: x86_64-pc-windows-gnu
+            skip_tests: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: ${{ matrix.target }}
+          profile: minimal
+#          override: true
+          default: true
+
+      - name: Show command used for Cargo
+        shell: bash
+        run: |
+          echo "cargo command is: ${{ env.CARGO }}"
+          echo "target flag is: ${{ env.TARGET_FLAGS }}"
+      - name: Build stuff
+        shell: bash
+        run: ${{ env.CARGO }} build --verbose --target ${{ matrix.target }} --all ${{ env.TARGET_FLAGS }}
+
+      - name: Run tests
+        shell: bash
+        run: ${{ matrix.skip_tests }} || ${{ env.CARGO }} test --verbose --target ${{ matrix.target }} --all ${{ env.TARGET_FLAGS }}
+
+  rustfmt:
+    name: rustfmt
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+          components: rustfmt
+      - name: Check formatting
+        shell: bash
+        run: |
+          cargo fmt --all -- --check
+
+#  dumpenv:
+#    name:    dumpenv
+#    runs-on: ubuntu-20.04
+#    steps:
+#      - name:  Check formatting
+#        shell: bash
+#        run:   |
+#               printenv
