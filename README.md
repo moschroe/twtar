@@ -8,7 +8,7 @@ _Disclaimer: Neither this project, nor the author, are in any way associated wit
 Allows iterating over entries TWRP ([Team Win Recovery Project (TWRP)][1]) backup tar files, even when they are
 encrypted and/or gzip-compressed.
 
-Uses roaes for handling the [TWRP][2] openaes format. Look there for a standalone decryption/encryption tool.
+Uses [roaes][2] for handling the TWRP openaes format. Look there for a standalone decryption/encryption tool.
 
 ### Binary
 
@@ -16,7 +16,7 @@ The executable `twrp2tar` will (optionally) decrypt the openaes format, (optiona
 process the tar data, creating a new tar file with the same contents as the original _apart from extended attributes
 (see below!)._ It uses very simple command line parsing. Running the command with `-?` will print its usage information.
 
-For binary releases, check on github at <https://github.com/moschroe/twtar>.
+For binary releases, check on github at <https://github.com/moschroe/twtar/releases>.
 
 > #### Beware
 > 

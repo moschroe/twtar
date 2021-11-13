@@ -1,7 +1,7 @@
 [package]
 name = "twtar"
 description = "Utility for accessing TWRP backup files"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["moschroe"]
 edition = "2018"
 license = "BSD-3-Clause"
